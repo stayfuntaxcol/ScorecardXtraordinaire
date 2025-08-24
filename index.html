@@ -166,7 +166,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, onAuthStateChanged, signInAnonymously, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getFirestore, collection, doc, getDoc, setDoc, addDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getFirestore, collection, doc, getDoc, setDoc, addDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAYzZ02RvPTDHLUu9Eh6sJXJ-gZNrrHiVY",
@@ -672,7 +672,7 @@
     async function deletePlayer(uid){
       if(!isHost()) return;
       if(!confirm('Verwijder deze speler?')) return;
-      await (await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')).deleteDoc(doc(db,'games',currentGameId,'players', uid));
+      await deleteDoc(doc(db,'games',currentGameId,'players', uid));
     }
 
     // Auto-join via URL ?game=CODE
