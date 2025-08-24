@@ -30,7 +30,7 @@
     .vcol{display:flex;flex-direction:column;gap:6px;min-width:90px}
     .vhead{font-weight:700;text-align:center}
     .cell{background:#0c1226;border:1px solid #1f2937;border-radius:10px;padding:8px;text-align:center;max-width:25ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .cell input{width:100%;text-align:center;border:1px solid #334155;background:#0b1020;color:#e5e7eb;border-radius:8px;padding:8px}
+    .cell input{width:100%;text-align:center;border:1px solid #334155;background:#0a1220;color:#ffffff;border-radius:8px;padding:10px;font-size:16px}
     .parcol .cell{background:#0a1020}
     .hcpcell input{width:64px}
 
@@ -44,8 +44,8 @@
 
     /* Confetti */
     .confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden}
-    .piece{position:absolute;will-change:transform;animation:fall 2s linear forwards}
-    @keyframes fall{to{transform:translate(var(--dx), 100vh) rotate(720deg);opacity:0}}
+    .piece{position:absolute;will-change:transform;animation:fall 5s ease-out forwards}
+    @keyframes fall{to{transform:translate(var(--dx), 100vh) rotate(1080deg);opacity:0}}
 
     /* Overlay voor file:// */
     .overlay{position:fixed;inset:0;background:#0b1020;z-index:9999;display:none;padding:18px}
@@ -349,6 +349,10 @@
         renderLeader(players);
         maybeFinalEvent(players);
       });
+        renderVertical();
+        renderLeader(players);
+        maybeFinalEvent(players);
+      });
 
       unsubEvents = onSnapshot(collection(db,'games',currentGameId,'events'), (qs)=>{
         qs.docChanges().forEach(ch=>{ if(ch.type==='added') handleEvent(ch.doc.data()); })
@@ -423,7 +427,7 @@
       col.append(el('div',{className:'cell vhead', innerHTML:`Par<br><span class='muted'>${start+1}-${end}</span>`}));
       for(let i=start;i<end;i++){
         const inp = el('input',{type:'number', min:2, max:7, value: par[i]||4});
-        inp.onchange = debounce(async ()=>{ par[i]=clamp(int(inp.value,4),2,7); await updateDoc(doc(db,'games',currentGameId), { 'course.par': par }); }, 200);
+        inp.onchange = debounce(async ()=>{ par[i]=clamp(int(inp.value,4),2,7); await updateDoc(doc(db,'games',currentGameId), { 'course.par': par }); renderVertical(); renderLeader(players); }, 200);
         const cell = el('div',{className:'cell'}); cell.append(inp); col.append(cell);
       }
       const idx = [...Array(end-start).keys()].map(k=>start+k);
@@ -435,20 +439,39 @@
     function buildPlayerColumn(p,start,end){
       const editable = (openInput || p.uid===auth.currentUser?.uid || isHost());
       const col = el('div',{className:'vcol'});
-      const flightBadge = p.flight? `<span class="pill" style="font-size:11px">Flight ${p.flight}</span>`:'';
-      col.append(el('div',{className:'cell vhead', innerHTML:`${escapeHtml(p.name)}<br>${flightBadge}`}));
-      // HCP row
-      const hcpCell = el('div',{className:'cell hcpcell'});
-      const hcpInp = el('input',{type:'number', min:0, max:54, value: p.handicap ?? 0});
+      const flightBadge = p.flight? `<span class="pill" style="font-size:11px">Flt ${p.flight}</span>`:'';
+
+      // Header met naam + HCP input + acties (geen extra rij → lijnen blijven gelijk)
+      const head = el('div',{className:'cell vhead'});
+      const nameSpan = el('span',{innerHTML: `${escapeHtml(p.name)} ${flightBadge}`});
+      head.append(nameSpan);
+      // HCP inline
+      const hcpWrap = el('div',{style:'margin-top:6px; display:flex; gap:6px; align-items:center; justify-content:center'});
+      hcpWrap.append(el('span',{className:'muted', innerText:'HCP'}));
+      const hcpInp = el('input',{type:'number', min:0, max:54, value: p.handicap ?? 0, style:'max-width:70px'});
       hcpInp.disabled=!editable; hcpInp.onchange = debounce(()=> saveHandicap(p.uid, hcpInp.value), 200);
-      hcpCell.append(el('div',{className:'muted', innerText:'HCP'})); hcpCell.append(hcpInp); col.append(hcpCell);
+      hcpWrap.append(hcpInp);
+      // Actieknoppen voor host (rename/flight/delete)
+      if(isHost()){
+        const btns = el('div',{style:'display:flex; gap:6px; margin-top:6px; justify-content:center'});
+        const bEdit = el('button',{innerText:'✎', title:'Naam bewerken', className:'pill'});
+        const bFlight = el('button',{innerText:'⇄', title:'Flight wijzigen', className:'pill'});
+        const bDel = el('button',{innerText:'🗑', title:'Speler verwijderen', className:'pill'});
+        bEdit.onclick = ()=> renamePlayer(p.uid, p.name);
+        bFlight.onclick = ()=> changeFlight(p.uid, p.flight||'A');
+        bDel.onclick = ()=> deletePlayer(p.uid);
+        btns.append(bEdit,bFlight,bDel);
+        head.append(btns);
+      }
+      head.append(hcpWrap);
+      col.append(head);
 
       const strokes = (p.strokes||new Array(18).fill(null)).slice(0,18);
       for(let i=start;i<end;i++){
         const cell = el('div',{className:'cell'});
         const inp = el('input',{type:'number', min:1, max:8, value: strokes[i] ?? ''});
         inp.disabled = !editable;
-        inp.onchange = debounce(()=> saveStroke(p.uid, i, inp.value), 150);
+        inp.onchange = debounce(()=> saveStroke(p.uid, i, inp.value), 120);
         if(strokes[i]!=null){ colorCodeCell(cell, strokes[i], par[i]); }
         cell.append(inp);
         col.append(cell);
@@ -458,14 +481,13 @@
       const idx = [...Array(end-start).keys()].map(k=>start+k);
       const gross = idx.reduce((s,i)=>s+(int(strokes[i],0)||0),0);
       const parSum = idx.reduce((s,i)=>s+(par[i]||0),0);
-      const netDelta = (gross - parSum) - (p.handicap||0) * ( (end-start)/18 );
       const totalCell = el('div',{className:'cell vhead'});
       totalCell.innerHTML = `Totaal<br><b>${gross}</b> • <span class='muted'>±Par ${signed(gross-parSum)}</span>`;
       col.append(totalCell);
       return col;
     }
 
-    function colorCodeCell(cell, strokes, p){
+    function colorCodeCell(cell, strokes, p){(cell, strokes, p){
       const diff = strokes - p;
       let cls='par', label='Par';
       if(diff<=-2){ cls='eagle'; label='Eagle'; }
@@ -492,6 +514,12 @@
       const total = strokes.reduce((a,b)=>a+(b||0),0);
       await setDoc(pRef, { strokes, total, updatedAt: serverTimestamp() }, {merge:true});
 
+      // Update lokale state voor directe feedback
+      const idx = players.findIndex(x=>x.uid===playerUid);
+      if(idx>=0){ players[idx] = { ...players[idx], strokes, total }; }
+      renderVertical();
+      renderLeader(players);
+
       // Awards & events
       const pf = players.find(x=>x.uid===playerUid) || data;
       const pPar = par[holeIndex]||4;
@@ -499,10 +527,10 @@
         const type = (v<=pPar-2)?'eagle':'birdie';
         await addEvent({type, hole: holeIndex+1, player: pf.name||'Speler'});
       }
-      maybeFinalEvent([...players.filter(x=>x.uid!==playerUid), { ...pf, strokes }]);
+      maybeFinalEvent(players);
     }
 
-    function maybeFinalEvent(arr){
+    function maybeFinalEvent(arr){(arr){
       const idx = holeIndices();
       if(arr.length===0) return;
       const allDone = arr.every(p=>{ const s = (p.strokes||[]); return idx.every(i => typeof s[i]==='number' && s[i]>0); });
@@ -520,11 +548,52 @@
       if(ev.type==='birdie'||ev.type==='eagle'){
         celebrate(`${ev.player} — ${ev.type.toUpperCase()} op hole ${ev.hole}!`);
       } else if(ev.type==='game_end'){
-        celebrate(`WINNAAR: ${ev.winner.name}  (Net: ${ev.winner.net.toFixed(1)})`, true);
+        celebrate(`WINNAAR: ${ev.winner.name}  (Net: ${Number(ev.winner.net).toFixed(1)})`, true);
       }
     }
 
     function celebrate(text, big=false){
+      launchConfetti(big?600:400);
+      const banner = el('div',{style:`position:fixed;inset:auto 0 10%;margin:auto;max-width:90%;text-align:center;font-weight:800;font-size:${big? '46px':'30px'};color:white;text-shadow:0 2px 10px #000`});
+      banner.innerText = text;
+      document.body.append(banner);
+      setTimeout(()=>banner.remove(), 5000);
+    }
+
+    function launchConfetti(n=400){
+      for(let i=0;i<n;i++){
+        const d = el('div',{className:'piece'});
+        d.style.left = Math.random()*100+'%';
+        d.style.top = '-10px';
+        d.style.setProperty('--dx', ((Math.random()*300-150))+'px');
+        d.style.background = `hsl(${Math.random()*360}, 90%, 60%)`;
+        d.style.width = d.style.height = (6+Math.random()*6)+'px';
+        confettiBox.append(d);
+        setTimeout(()=>d.remove(), 5200);
+      }
+    }(text, big=false){
+      launchConfetti(big?600:400); // veel meer confetti
+      // geen geluid meer
+      const banner = el('div',{style:`position:fixed;inset:auto 0 10%;margin:auto;max-width:90%;text-align:center;font-weight:800;font-size:${big? '46px':'30px'};color:white;text-shadow:0 2px 10px #000`});
+      banner.innerText = text;
+      document.body.append(banner);
+      setTimeout(()=>banner.remove(), 5000); // 5s
+    }
+
+    function launchConfetti(n=400){
+      for(let i=0;i<n;i++){
+        const d = el('div',{className:'piece'});
+        d.style.left = Math.random()*100+'%';
+        d.style.top = '-10px';
+        d.style.setProperty('--dx', ((Math.random()*300-150))+'px');
+        d.style.background = `hsl(${Math.random()*360}, 90%, 60%)`;
+        d.style.width = d.style.height = (6+Math.random()*6)+'px';
+        confettiBox.append(d);
+        setTimeout(()=>d.remove(), 5200);
+      }
+    }
+
+    // (geluid-functies verwijderd)(text, big=false){
       launchConfetti(big?200:120);
       playFanfare(big);
       const banner = el('div',{style:`position:fixed;inset:auto 0 10%;margin:auto;max-width:90%;text-align:center;font-weight:800;font-size:${big? '42px':'28px'};color:white;text-shadow:0 2px 10px #000`});
@@ -562,12 +631,49 @@
 
     function fetchPlayersOnce(){ return new Promise((resolve,reject)=>{ const q = query(collection(db,'games',currentGameId,'players')); const stop = onSnapshot(q, (qs)=>{ const arr=[]; qs.forEach(d=>arr.push({id:d.id, ...d.data()})); stop(); resolve(arr); }, reject); }); }
 
+    function renderLeader(arr){
+      leader.innerHTML='';
+      const idx = holeIndices();
+      const parSum = idx.reduce((s,i)=>s+(par[i]||0),0);
+      const scored = arr.map(p=>{
+        const gross = idx.reduce((s,i)=>s+(int((p.strokes||[])[i],0)||0),0);
+        const net = (gross - parSum) - (p.handicap||0) * (idx.length/18);
+        return {name:p.name||'Speler', gross, net};
+      }).sort((a,b)=>a.net-b.net);
+      const wrap = el('div');
+      scored.forEach((r,i)=>{
+        const row = el('div',{className:'row', style:'justify-content:space-between'});
+        row.append(el('div',{innerText:`${i+1}. ${r.name}`}));
+        row.append(el('div',{innerText:`Gross ${r.gross} • Net ${r.net.toFixed(1)}`}));
+        wrap.append(row);
+      });
+      leader.append(wrap);
+    }
+
     // helpers
     function int(v,def){ const n = parseInt(v,10); return isNaN(n)?def:n }
     function clamp(n,min,max){ if(n==null)return n; return Math.max(min, Math.min(max,n)) }
     function signed(n){ return (n>0?'+':'')+n }
     function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms) } }
     function escapeHtml(s){ return (s||'').replace(/[&<>\"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])) }
+
+    async function renamePlayer(uid, oldName){
+      if(!isHost()) return;
+      const name = prompt('Nieuwe naam voor speler:', oldName||'');
+      if(!name) return;
+      await updateDoc(doc(db,'games',currentGameId,'players', uid), { name: name.trim(), updatedAt: serverTimestamp() });
+    }
+    async function changeFlight(uid, old){
+      if(!isHost()) return;
+      const fl = prompt('Flight (A-D):', old||'A');
+      if(!fl) return;
+      await updateDoc(doc(db,'games',currentGameId,'players', uid), { flight: fl.toUpperCase().slice(0,1), updatedAt: serverTimestamp() });
+    }
+    async function deletePlayer(uid){
+      if(!isHost()) return;
+      if(!confirm('Verwijder deze speler?')) return;
+      await (await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js')).deleteDoc(doc(db,'games',currentGameId,'players', uid));
+    }
 
     // Auto-join via URL ?game=CODE
     (function(){ const sp = new URLSearchParams(location.search); const g = sp.get('game'); if(g){ gameCodeInp.value = g; } })();
