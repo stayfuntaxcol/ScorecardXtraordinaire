@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multiplayer Golf Scorecard – Regular (Firestore Realtime)</title>
+  <style>
+    :root{--c:#0b6bfd;--bg:#0f172a;--card:#111827;--muted:#94a3b8;--ok:#16a34a;--warn:#f59e0b;--err:#ef4444}
+    html,body{margin:0;height:100%;background:#0b1020;color:#e5e7eb;font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .card{background:#0f1426;border:1px solid #1f2937;border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    h1{font-size:20px;margin:0 0 6px}
+    h2{font-size:16px;margin:0 0 6px;color:#cbd5e1}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .row>input,.row>button,.row>select{padding:8px 10px;border-radius:10px;border:1px solid #334155;background:#0b1020;color:#e5e7eb}
+    .row>button{background:var(--c);border-color:transparent;cursor:pointer}
+    .row>button.ghost{background:#0b1020;border:1px dashed #334155}
+    .help{color:var(--muted);font-size:12px}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b1020;border:1px solid #334155;color:#cbd5e1}
+    table{width:100%;border-collapse:separate;border-spacing:0;margin-top:8px}
+    th,td{border:1px solid #1f2937;padding:6px 8px;text-align:center}
+    th{background:#121a33;color:#cbd5e1;position:sticky;top:0}
+    td{background:#0c1226}
+    tr:nth-child(even) td{background:#0a1020}
+    td.me input{background:#101a36;border:1px solid #334155}
+    input[type="number"]{width:54px;text-align:center}
+    input[type="text"]{min-width:200px}
+    .leader{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center}
+    .tag{font-size:11px;color:#93c5fd}
+    .status{display:inline-flex;gap:6px;align-items:center}
+    .dot{width:8px;height:8px;border-radius:50%}
+    .dot.live{background:#22c55e;box-shadow:0 0 0 6px rgba(34,197,94,.15)}
+    .dot.off{background:#64748b}
+    .notice{background:#05243a;border:1px solid #11364e;color:#cfe8ff;padding:10px;border-radius:10px}
+    .grid{display:grid;grid-template-columns:repeat(18,1fr)}
+    .muted{color:#94a3b8}
+    .hidden{display:none}
+    .right{margin-left:auto}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="authCard">
+      <h1>Multiplayer Golf Scorecard</h1>
+      <div class="row">
+        <input id="displayName" type="text" placeholder="Jouw naam" />
+        <button id="btnLogin">Inloggen (anoniem)</button>
+      </div>
+      <p class="help">Simpel inloggen (anoniem). Je naam is zichtbaar in de scorelijst. Geen wachtwoord nodig.</p>
+      <p id="authInfo" class="help"></p>
+    </div>
+
+    <div class="card hidden" id="lobbyCard">
+      <h2>Nieuwe ronde</h2>
+      <div class="row">
+        <label>Scorecard type:
+          <select id="modeSelect">
+            <option value="regular" selected>Regular (pars + handicaps)</option>
+            <option value="extended" disabled>Extended (binnenkort)</option>
+          </select>
+        </label>
+        <button id="btnCreate">Maak nieuwe game</button>
+      </div>
+      <h2>Of meespelen</h2>
+      <div class="row">
+        <input id="gameCode" type="text" placeholder="Game code (bv. 6-8 tekens)" />
+        <button id="btnJoin" class="ghost">Join bestaande game</button>
+        <span class="pill" id="mePill">Niet ingelogd</span>
+      </div>
+      <p class="help">Regular = eenvoudige scorekaart met par & handicap. Extended volgt met undo, chat, ready-check, timers, rollen, statistieken, heatmap.</p>
+    </div>
+
+    <div class="card hidden" id="gameCard">
+      <div class="row">
+        <h2 class="right">Game: <span id="codeOut" class="pill"></span> <span id="modeOut" class="pill"></span></h2>
+      </div>
+
+      <div class="row">
+        <label>Course: <input id="courseName" type="text" placeholder="Baan naam" /></label>
+        <label>Datum: <input id="gameDate" type="date" /></label>
+        <span class="status"><span class="dot off" id="liveDot"></span> <span id="liveTxt">Offline</span></span>
+        <span class="pill" id="rolePill">rol: speler</span>
+      </div>
+
+      <div class="row">
+        <button id="btnAddMe">Voeg mij toe als speler</button>
+        <button id="btnCopyLink" class="ghost">Kopieer invite link</button>
+      </div>
+
+      <div class="notice" id="hostNotice" style="display:none;">
+        <b>Host</b>: jij beheert course, par en of iedereen overal mag editen.
+        <div class="row" style="margin-top:8px">
+          <label>Open invoer: <input type="checkbox" id="openInputToggle" /></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Par per hole</h2>
+        <div class="help">Host kan par aanpassen. Werkt direct door in leaderboard (+/- par en net score).</div>
+        <div id="parGrid" class="grid"></div>
+      </div>
+
+      <div class="card">
+        <h2>Scorekaart (Regular)</h2>
+        <div class="help">Elke speler heeft een eigen handicap. Net score = (totaal − som(par)) − handicap.</div>
+        <div style="overflow:auto">
+          <table id="scoreTable">
+            <thead id="thead"></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Leaderboard</h2>
+        <div id="leader"></div>
+      </div>
+
+      <div class="card">
+        <h2>Export</h2>
+        <div class="row">
+          <button id="btnExport" class="ghost">Download JSON</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // === Firebase SDK ===
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signInAnonymously, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, collection, doc, getDoc, setDoc, addDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    // ===  VERVANG MET JOUW CONFIG  ===
+    const firebaseConfig = {
+  apiKey: "AIzaSyAYzZ02RvPTDHLUu9Eh6sJXJ-gZNrrHiVY",
+  authDomain: "multiplayer-golf-scorecard.firebaseapp.com",
+  projectId: "multiplayer-golf-scorecard",
+  storageBucket: "multiplayer-golf-scorecard.appspot.com",
+  messagingSenderId: "824350863208",
+  appId: "1:824350863208:web:c0455cafc028ec9bfa70dd",
+  measurementId: "G-MT45DZXMR2"
+};
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+
+    // DOM utils
+    const $ = (q)=>document.querySelector(q);
+    const el = (tag, attrs={})=>{ const e=document.createElement(tag); Object.assign(e, attrs); return e };
+
+    // Elements
+    const authCard = $('#authCard');
+    const lobbyCard= $('#lobbyCard');
+    const gameCard = $('#gameCard');
+
+    const displayName = $('#displayName');
+    const btnLogin    = $('#btnLogin');
+    const authInfo    = $('#authInfo');
+
+    const btnCreate   = $('#btnCreate');
+    const gameCodeInp = $('#gameCode');
+    const btnJoin     = $('#btnJoin');
+    const mePill      = $('#mePill');
+    const modeSelect  = $('#modeSelect');
+
+    const courseName  = $('#courseName');
+    const gameDate    = $('#gameDate');
+    const liveDot     = $('#liveDot');
+    const liveTxt     = $('#liveTxt');
+    const rolePill    = $('#rolePill');
+    const hostNotice  = $('#hostNotice');
+    const openInputToggle = $('#openInputToggle');
+    const parGrid     = $('#parGrid');
+    const thead       = $('#thead');
+    const tbody       = $('#tbody');
+    const leader      = $('#leader');
+    const btnAddMe    = $('#btnAddMe');
+    const btnCopyLink = $('#btnCopyLink');
+    const btnExport   = $('#btnExport');
+    const codeOut     = $('#codeOut');
+    const modeOut     = $('#modeOut');
+
+    // State
+    let currentUser = null;
+    let currentGameId = null;
+    let unsubPlayers = null;
+    let unsubGame = null;
+    let hostUid = null;
+    let openInput = false;
+    let par = new Array(18).fill(4);
+    let mode = 'regular';
+
+    // Restore
+    gameCodeInp.value = localStorage.getItem('golf_game') || '';
+    displayName.value = localStorage.getItem('golf_name') || '';
+
+    // Auth
+    btnLogin.addEventListener('click', async ()=>{
+      const name = displayName.value.trim() || 'Speler';
+      await signInAnonymously(auth);
+      onAuthStateChanged(auth, async (u)=>{
+        if(u && (!u.displayName || u.displayName!==name)){
+          try{ await updateProfile(u,{displayName:name}); }catch(e){console.warn(e)}
+        }
+      })
+    });
+
+    onAuthStateChanged(auth, (user)=>{
+      currentUser = user;
+      if(user){
+        authInfo.textContent = `Ingelogd als ${user.displayName||'Speler'} (uid ${user.uid.slice(0,6)}…)`;
+        mePill.textContent = `Ingelogd: ${user.displayName||'Speler'}`;
+        authCard.classList.add('hidden');
+        lobbyCard.classList.remove('hidden');
+        localStorage.setItem('golf_name', user.displayName||'Speler');
+      } else {
+        authCard.classList.remove('hidden');
+        lobbyCard.classList.add('hidden');
+        gameCard.classList.add('hidden');
+      }
+    });
+
+    // Game lifecycle
+    function randCode(){ return Math.random().toString(36).slice(2,8).toUpperCase(); }
+
+    btnCreate.addEventListener('click', async ()=>{
+      const code = randCode();
+      const gameRef = doc(db,'games',code);
+      const today = new Date().toISOString().slice(0,10);
+      mode = modeSelect.value; // currently only 'regular' allowed
+      await setDoc(gameRef,{
+        code,
+        createdAt: serverTimestamp(),
+        hostUid: currentUser.uid,
+        openInput: false,
+        mode: 'regular', // Extended komt later
+        course: { name: 'Onbekende baan', date: today, par: new Array(18).fill(4) }
+      });
+      await joinGame(code);
+    });
+
+    btnJoin.addEventListener('click', async ()=>{
+      const code = gameCodeInp.value.trim().toUpperCase();
+      if(!code) return alert('Vul een game code in.');
+      await joinGame(code);
+    });
+
+    async function joinGame(code){
+      currentGameId = code;
+      codeOut.textContent = code;
+      localStorage.setItem('golf_game', code);
+      lobbyCard.classList.add('hidden');
+      gameCard.classList.remove('hidden');
+      startListeners();
+    }
+
+    async function startListeners(){
+      if(unsubPlayers) unsubPlayers();
+      if(unsubGame) unsubGame();
+
+      const gameRef = doc(db,'games',currentGameId);
+
+      unsubGame = onSnapshot(gameRef, (snap)=>{
+        if(!snap.exists()) return;
+        const g = snap.data();
+        hostUid = g.hostUid;
+        openInput = !!g.openInput;
+        par = g.course?.par || new Array(18).fill(4);
+        mode = g.mode || 'regular';
+        courseName.value = g.course?.name || '';
+        gameDate.value = g.course?.date || '';
+        openInputToggle.checked = openInput;
+        modeOut.textContent = `mode: ${mode}`;
+
+        const isHost = currentUser && currentUser.uid===hostUid;
+        rolePill.textContent = `rol: ${isHost?'host':'speler'}`;
+        hostNotice.style.display = isHost?'block':'none';
+        renderParGrid(isHost);
+        setLive(true);
+      });
+
+      const q = query(collection(db,'games',currentGameId,'players'), orderBy('total'));
+      unsubPlayers = onSnapshot(q, (qs)=>{
+        const arr = [];
+        qs.forEach(d=>arr.push({id:d.id, ...d.data()}));
+        renderTable(arr);
+        renderLeader(arr);
+      });
+
+      openInputToggle.addEventListener('change', async ()=>{
+        await updateDoc(gameRef,{openInput: openInputToggle.checked});
+      });
+
+      courseName.addEventListener('change', debounce(async ()=>{
+        if(!isHost()) return;
+        await updateDoc(gameRef,{ 'course.name': courseName.value });
+      }, 300));
+      gameDate.addEventListener('change', debounce(async ()=>{
+        if(!isHost()) return;
+        await updateDoc(gameRef,{ 'course.date': gameDate.value });
+      }, 0));
+
+      btnAddMe.onclick = addMeAsPlayer;
+      btnCopyLink.onclick = copyInvite;
+      btnExport.onclick = exportJson;
+    }
+
+    function isHost(){ return currentUser && currentUser.uid===hostUid }
+
+    function setLive(on){
+      liveDot.classList.toggle('live',on);
+      liveDot.classList.toggle('off',!on);
+      liveTxt.textContent = on?'Live':'Offline';
+    }
+
+    async function addMeAsPlayer(){
+      if(!currentUser) return;
+      const pRef = doc(db,'games',currentGameId,'players', currentUser.uid);
+      const name = (currentUser.displayName||'Speler').trim();
+      const init = new Array(18).fill(null);
+      await setDoc(pRef,{
+        uid: currentUser.uid,
+        name,
+        handicap: 0, // nieuw in Regular
+        strokes: init,
+        total: 0,
+        updatedAt: serverTimestamp()
+      }, {merge:true});
+    }
+
+    function renderParGrid(editable){
+      parGrid.innerHTML = '';
+      for(let i=0;i<18;i++){
+        const inp = el('input',{type:'number', min:2, max:7, value: par[i]||4});
+        inp.disabled = !editable;
+        inp.addEventListener('change', debounce(async ()=>{
+          par[i] = clamp(int(inp.value,4),2,7);
+          await updateDoc(doc(db,'games',currentGameId), { 'course.par': par });
+        }, 200));
+        const cell = el('div');
+        const lbl = el('div',{textContent:`H${i+1}`, className:'muted'});
+        cell.append(lbl); cell.append(inp);
+        parGrid.append(cell);
+      }
+    }
+
+    function renderTable(players){
+      // header
+      thead.innerHTML = '';
+      const hr = el('tr');
+      hr.append(th('Speler'));
+      hr.append(th('HCP'));
+      for(let i=1;i<=18;i++) hr.append(th('H'+i));
+      hr.append(th('Totaal'));
+      hr.append(th('+/- Par'));
+      hr.append(th('Net (+/-)'));
+      thead.append(hr);
+
+      // body
+      tbody.innerHTML='';
+      const myUid = currentUser?.uid;
+      players.forEach(p=>{
+        const tr = el('tr');
+        const nameTd = el('td'); nameTd.textContent = p.name||'Speler'; tr.append(nameTd);
+
+        // Handicap kolom (bewerkbaar door speler zelf, host, of bij openInput)
+        const editable = (openInput || p.uid===myUid || isHost());
+        const hcpTd = el('td');
+        const hcpInp = el('input',{type:'number', min:0, max:54, value: p.handicap ?? 0});
+        hcpInp.disabled = !editable;
+        hcpInp.addEventListener('change', debounce(()=> saveHandicap(p.uid, hcpInp.value), 250));
+        hcpTd.append(hcpInp);
+        tr.append(hcpTd);
+
+        const strokes = (p.strokes||new Array(18).fill(null)).slice(0,18);
+        let total = 0;
+        for(let i=0;i<18;i++){
+          const td = el('td');
+          if(editable){ td.classList.add('me'); }
+          const inp = el('input',{type:'number', min:1, max:15, value: strokes[i] ?? ''});
+          inp.disabled = !editable;
+          inp.addEventListener('change', debounce(()=> saveStroke(p.uid, i, inp.value), 250));
+          td.append(inp);
+          tr.append(td);
+          total += (int(strokes[i],0));
+        }
+        const grossDelta = total - sum(par);
+        const netDelta   = grossDelta - (p.handicap||0);
+        const totalTd = el('td'); totalTd.textContent = total; tr.append(totalTd);
+        const toParTd = el('td'); toParTd.textContent = signed(grossDelta); tr.append(toParTd);
+        const netTd   = el('td'); netTd.textContent   = signed(netDelta); tr.append(netTd);
+        tbody.append(tr);
+      });
+    }
+
+    async function saveHandicap(playerUid, value){
+      const v = clamp(int(value,0), 0, 54);
+      const pRef = doc(db,'games',currentGameId,'players', playerUid);
+      await setDoc(pRef, { handicap: v, updatedAt: serverTimestamp() }, {merge:true});
+    }
+
+    async function saveStroke(playerUid, holeIndex, value){
+      const v = clamp(int(value,null), 1, 15);
+      const pRef = doc(db,'games',currentGameId,'players', playerUid);
+      const snap = await getDoc(pRef);
+      const data = snap.exists()? snap.data(): {strokes:new Array(18).fill(null)};
+      const strokes = (data.strokes||new Array(18).fill(null)).slice(0,18);
+      strokes[holeIndex] = v;
+      const total = strokes.reduce((a,b)=>a+(b||0),0);
+      await setDoc(pRef, { strokes, total, updatedAt: serverTimestamp() }, {merge:true});
+    }
+
+    function renderLeader(players){
+      leader.innerHTML='';
+      const ul = el('div');
+      const parSum = sum(par);
+      // Sorteer op Net (+/-)
+      const sorted = players.slice().sort((a,b)=>((a.total||0)-parSum-(a.handicap||0)) - ((b.total||0)-parSum-(b.handicap||0)));
+      sorted.forEach((p,idx)=>{
+        const gross = (p.total||0) - parSum;
+        const net   = gross - (p.handicap||0);
+        const row = el('div',{className:'leader'});
+        row.append(el('div',{textContent:`${idx+1}. ${p.name}`}));
+        row.append(el('div',{textContent:`Totaal: ${p.total||0}`}));
+        row.append(el('div',{innerHTML:`<span class="tag">Gross: ${signed(gross)}</span>`}));
+        row.append(el('div',{innerHTML:`<span class="tag">Net: ${signed(net)}</span>`}));
+        ul.append(row);
+      });
+      leader.append(ul);
+    }
+
+    async function copyInvite(){
+      const url = new URL(location.href);
+      url.searchParams.set('game', currentGameId);
+      await navigator.clipboard.writeText(url.toString());
+      alert('Invite link gekopieerd naar klembord');
+    }
+
+    async function exportJson(){
+      const gameRef = doc(db,'games',currentGameId);
+      const gameSnap = await getDoc(gameRef);
+      const playersArr = await fetchPlayersOnce();
+      const data = { gameId: currentGameId, ...(gameSnap.exists()?gameSnap.data():{}), players: playersArr };
+      const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+      const a = el('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `golf_${currentGameId}.json`;
+      a.click();
+    }
+
+    function fetchPlayersOnce(){
+      return new Promise((resolve,reject)=>{
+        const q = query(collection(db,'games',currentGameId,'players'));
+        const stop = onSnapshot(q, (qs)=>{
+          const arr=[]; qs.forEach(d=>arr.push({id:d.id, ...d.data()}));
+          stop(); resolve(arr);
+        }, reject);
+      });
+    }
+
+    // helpers
+    function th(txt){ const t=el('th'); t.textContent=txt; return t }
+    function int(v,def){ const n = parseInt(v,10); return isNaN(n)?def:n }
+    function clamp(n,min,max){ if(n==null)return n; return Math.max(min, Math.min(max,n)) }
+    function sum(a){ return a.reduce((x,y)=>x+(y||0),0) }
+    function signed(n){ return (n>0?'+':'')+n }
+    function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms) } }
+
+    // Auto-join via URL ?game=CODE
+    (function(){
+      const sp = new URLSearchParams(location.search);
+      const g = sp.get('game');
+      if(g){ gameCodeInp.value = g; }
+    })();
+  </script>
+</body>
+</html>
