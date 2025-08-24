@@ -6,11 +6,11 @@
   <title>Multiplayer Golf Scorecard – Regular (Firestore Realtime)</title>
   <style>
     :root{--c:#0b6bfd;--bg:#0b1020;--card:#0f1426;--muted:#94a3b8;--ok:#16a34a;--warn:#f59e0b;--err:#ef4444;--purple:#7c3aed}
-    html,body{margin:0;height:100%;background:var(--bg);color:#e5e7eb;font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    html,body{margin:0;height:100%;background:var(--bg);color:#e5e7eb;font:16px/1.5 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
     .wrap{max-width:1200px;margin:0 auto;padding:16px}
     .card{background:var(--card);border:1px solid #1f2937;border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
-    h1{font-size:20px;margin:0 0 6px}
-    h2{font-size:16px;margin:0 0 6px;color:#cbd5e1}
+    h1{font-size:22px;margin:0 0 6px}
+    h2{font-size:18px;margin:0 0 6px;color:#cbd5e1}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .row>input,.row>button,.row>select,.row>textarea{padding:8px 10px;border-radius:10px;border:1px solid #334155;background:#0b1020;color:#e5e7eb}
     .row>button{background:var(--c);border-color:transparent;cursor:pointer}
@@ -28,9 +28,9 @@
     /* Verticale scorekaart */
     .vtable{display:grid;gap:6px;overflow:auto}
     .vcol{display:flex;flex-direction:column;gap:6px;min-width:90px}
-    .vhead{font-weight:600;text-align:center}
-    .cell{background:#0c1226;border:1px solid #1f2937;border-radius:10px;padding:6px;text-align:center}
-    .cell input{width:100%;text-align:center;border:1px solid #334155;background:#0b1020;color:#e5e7eb;border-radius:8px;padding:6px}
+    .vhead{font-weight:700;text-align:center}
+    .cell{background:#0c1226;border:1px solid #1f2937;border-radius:10px;padding:8px;text-align:center;max-width:25ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cell input{width:100%;text-align:center;border:1px solid #334155;background:#0b1020;color:#e5e7eb;border-radius:8px;padding:8px}
     .parcol .cell{background:#0a1020}
     .hcpcell input{width:64px}
 
@@ -99,7 +99,6 @@
         <button id="btnJoin" class="ghost">Join bestaande game</button>
         <span class="pill" id="mePill">Niet ingelogd</span>
       </div>
-      <p class="help">Regular = eenvoudige scorekaart met par & handicap. Extended volgt met undo, chat, ready-check, timers, rollen, statistieken, heatmap.</p>
     </div>
 
     <div class="card hidden" id="gameCard">
@@ -110,6 +109,7 @@
       <div class="row">
         <label>Course: <input id="courseName" type="text" placeholder="Baan naam" /></label>
         <label>Datum: <input id="gameDate" type="date" /></label>
+        <label>Teetime: <input id="teeTime" type="time" /></label>
         <span class="status"><span class="dot off" id="liveDot"></span> <span id="liveTxt">Offline</span></span>
         <span class="pill" id="rolePill">rol: speler</span>
         <label class="switch"><input type="checkbox" id="toggleBack" checked> Toon holes 10–18</label>
@@ -117,17 +117,31 @@
 
       <div class="row">
         <button id="btnAddMe">Voeg mij toe als speler</button>
+        <label>Mijn flight:
+          <select id="flightSelect">
+            <option value="A" selected>A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </label>
         <div id="hostAdd" class="row" style="gap:6px;display:none">
           <input id="manualName" type="text" placeholder="Spelernaam" />
           <input id="manualHcp" type="number" min="0" max="54" value="0" />
+          <label>Flight:
+            <select id="manualFlight">
+              <option value="A" selected>A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </label>
           <button id="btnAddManual" class="ghost">Host: speler handmatig toevoegen</button>
         </div>
         <button id="btnCopyLink" class="ghost">Kopieer invite link</button>
       </div>
 
       <div class="card">
-        <h2>Verticale scorekaart</h2>
-        <div class="help">Par kolom links. Spelers naast elkaar. Front 9 en Back 9; Back 9 is te verbergen.</div>
         <div id="vtableFront" class="vtable" style="grid-template-columns: repeat(1, minmax(90px,1fr));"></div>
         <div id="vtableBackWrap" class="hidden">
           <div style="height:8px"></div>
@@ -154,7 +168,6 @@
     import { getAuth, onAuthStateChanged, signInAnonymously, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { getFirestore, collection, doc, getDoc, setDoc, addDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-    // === Jouw Firebase config ===
     const firebaseConfig = {
       apiKey: "AIzaSyAYzZ02RvPTDHLUu9Eh6sJXJ-gZNrrHiVY",
       authDomain: "multiplayer-golf-scorecard.firebaseapp.com",
@@ -191,6 +204,7 @@
 
     const courseName  = $('#courseName');
     const gameDate    = $('#gameDate');
+    const teeTime     = $('#teeTime');
     const liveDot     = $('#liveDot');
     const liveTxt     = $('#liveTxt');
     const rolePill    = $('#rolePill');
@@ -205,6 +219,8 @@
     const btnAddManual= $('#btnAddManual');
     const manualName  = $('#manualName');
     const manualHcp   = $('#manualHcp');
+    const flightSelect= $('#flightSelect');
+    const manualFlight= $('#manualFlight');
     const btnCopyLink = $('#btnCopyLink');
     const btnExport   = $('#btnExport');
     const codeOut     = $('#codeOut');
@@ -263,6 +279,7 @@
       const code = randCode();
       const gameRef = doc(db,'games',code);
       const today = new Date().toISOString().slice(0,10);
+      const ttime = teeTime.value || '';
       mode = modeSelect.value;
       holes = parseInt(holesSelect.value,10);
       await setDoc(gameRef,{
@@ -272,7 +289,7 @@
         openInput: false,
         mode: 'regular',
         settings: { holes },
-        course: { name: 'Onbekende baan', date: today, par: new Array(18).fill(4) }
+        course: { name: 'Onbekende baan', date: today, teetime: ttime, par: new Array(18).fill(4) }
       });
       await joinGame(code);
     });
@@ -311,6 +328,7 @@
         holes = g.settings?.holes || 18;
         courseName.value = g.course?.name || '';
         gameDate.value = g.course?.date || '';
+        teeTime.value = g.course?.teetime || '';
         toggleBack.checked = true;
         vtableBackWrap.classList.toggle('hidden', holes===9 || !toggleBack.checked);
         holesOut.textContent = `${holes} holes`;
@@ -333,23 +351,14 @@
       });
 
       unsubEvents = onSnapshot(collection(db,'games',currentGameId,'events'), (qs)=>{
-        qs.docChanges().forEach(ch=>{
-          if(ch.type==='added') handleEvent(ch.doc.data());
-        })
+        qs.docChanges().forEach(ch=>{ if(ch.type==='added') handleEvent(ch.doc.data()); })
       })
 
-      toggleBack.addEventListener('change', ()=>{
-        vtableBackWrap.classList.toggle('hidden', holes===9 || !toggleBack.checked);
-      });
+      toggleBack.addEventListener('change', ()=>{ vtableBackWrap.classList.toggle('hidden', holes===9 || !toggleBack.checked); });
 
-      courseName.addEventListener('change', debounce(async ()=>{
-        if(!isHost()) return;
-        await updateDoc(gameRef,{ 'course.name': courseName.value });
-      }, 300));
-      gameDate.addEventListener('change', debounce(async ()=>{
-        if(!isHost()) return;
-        await updateDoc(gameRef,{ 'course.date': gameDate.value });
-      }, 0));
+      courseName.addEventListener('change', debounce(async ()=>{ if(!isHost()) return; await updateDoc(gameRef,{ 'course.name': courseName.value }); }, 300));
+      gameDate.addEventListener('change', debounce(async ()=>{ if(!isHost()) return; await updateDoc(gameRef,{ 'course.date': gameDate.value }); }, 0));
+      teeTime.addEventListener('change', debounce(async ()=>{ if(!isHost()) return; await updateDoc(gameRef,{ 'course.teetime': teeTime.value }); }, 0));
 
       btnAddMe.onclick = addMeAsPlayer;
       btnAddManual.onclick = addManualPlayer;
@@ -365,29 +374,31 @@
       const pRef = doc(db,'games',currentGameId,'players', currentUser.uid);
       const name = (currentUser.displayName||'Speler').trim();
       const init = new Array(18).fill(null);
-      await setDoc(pRef,{ uid: currentUser.uid, name, handicap: 0, strokes: init, total: 0, updatedAt: serverTimestamp() }, {merge:true});
+      const flight = flightSelect?.value || 'A';
+      await setDoc(pRef,{ uid: currentUser.uid, name, flight, handicap: 0, strokes: init, total: 0, updatedAt: serverTimestamp() }, {merge:true});
     }
 
     async function addManualPlayer(){
       if(!isHost()) return alert('Alleen host');
       const name = (manualName.value||'Speler').trim();
       const hcp  = clamp(int(manualHcp.value,0),0,54);
+      const flight = manualFlight?.value || 'A';
       const id = 'm_'+Math.random().toString(36).slice(2,8);
       const pRef = doc(db,'games',currentGameId,'players', id);
-      await setDoc(pRef,{ uid: id, name, handicap: hcp, strokes: new Array(18).fill(null), total:0, updatedAt: serverTimestamp() });
+      await setDoc(pRef,{ uid: id, name, flight, handicap: hcp, strokes: new Array(18).fill(null), total:0, updatedAt: serverTimestamp() });
       manualName.value=''; manualHcp.value='0';
     }
 
     function renderVertical(){
-      // Build columns: Par first, then each player
-      const cols = [buildParColumn(0,9), ...players.map(p=>buildPlayerColumn(p,0,9))];
+      // Build columns: Hole numbers, Par, then each player
+      const colsF = [buildHoleColumn(0,9), buildParColumn(0,9), ...players.map(p=>buildPlayerColumn(p,0,9))];
       vtableFront.innerHTML='';
-      vtableFront.style.gridTemplateColumns = `repeat(${cols.length}, minmax(110px,1fr))`;
-      cols.forEach(c=>vtableFront.append(c));
+      vtableFront.style.gridTemplateColumns = `repeat(${colsF.length}, minmax(110px,1fr))`;
+      colsF.forEach(c=>vtableFront.append(c));
 
       const showBack = holes===18 && toggleBack.checked;
       if(showBack){
-        const colsB = [buildParColumn(9,18), ...players.map(p=>buildPlayerColumn(p,9,18))];
+        const colsB = [buildHoleColumn(9,18), buildParColumn(9,18), ...players.map(p=>buildPlayerColumn(p,9,18))];
         vtableBack.innerHTML='';
         vtableBack.style.gridTemplateColumns = `repeat(${colsB.length}, minmax(110px,1fr))`;
         colsB.forEach(c=>vtableBack.append(c));
@@ -397,15 +408,24 @@
       }
     }
 
+    function buildHoleColumn(start,end){
+      const col = el('div',{className:'vcol'});
+      col.append(el('div',{className:'cell vhead', innerHTML:`Hole<br><span class='muted'>${start+1}-${end}</span>`}));
+      for(let i=start;i<end;i++){
+        col.append(el('div',{className:'cell', innerText: `H${i+1}`}));
+      }
+      col.append(el('div',{className:'cell vhead', innerHTML:`—`}));
+      return col;
+    }
+
     function buildParColumn(start,end){
       const col = el('div',{className:'vcol parcol'});
-      col.append(el('div',{className:'cell vhead', innerHTML:`Par<br><span class='muted'>Holes ${start+1}-${end}</span>`}));
+      col.append(el('div',{className:'cell vhead', innerHTML:`Par<br><span class='muted'>${start+1}-${end}</span>`}));
       for(let i=start;i<end;i++){
         const inp = el('input',{type:'number', min:2, max:7, value: par[i]||4});
         inp.onchange = debounce(async ()=>{ par[i]=clamp(int(inp.value,4),2,7); await updateDoc(doc(db,'games',currentGameId), { 'course.par': par }); }, 200);
         const cell = el('div',{className:'cell'}); cell.append(inp); col.append(cell);
       }
-      // Totals row for par
       const idx = [...Array(end-start).keys()].map(k=>start+k);
       const parSum = idx.reduce((s,i)=>s+(par[i]||0),0);
       col.append(el('div',{className:'cell vhead', innerHTML:`Par totaal<br><b>${parSum}</b>`}));
@@ -415,7 +435,8 @@
     function buildPlayerColumn(p,start,end){
       const editable = (openInput || p.uid===auth.currentUser?.uid || isHost());
       const col = el('div',{className:'vcol'});
-      col.append(el('div',{className:'cell vhead', innerHTML:`${escapeHtml(p.name)}<br><span class='muted'>UID ${(p.uid||'').slice(0,4)}</span>`}));
+      const flightBadge = p.flight? `<span class="pill" style="font-size:11px">Flight ${p.flight}</span>`:'';
+      col.append(el('div',{className:'cell vhead', innerHTML:`${escapeHtml(p.name)}<br>${flightBadge}`}));
       // HCP row
       const hcpCell = el('div',{className:'cell hcpcell'});
       const hcpInp = el('input',{type:'number', min:0, max:54, value: p.handicap ?? 0});
@@ -484,27 +505,16 @@
     function maybeFinalEvent(arr){
       const idx = holeIndices();
       if(arr.length===0) return;
-      // Alle spelers hebben voor alle geselecteerde holes een score?
-      const allDone = arr.every(p=>{
-        const s = (p.strokes||[]);
-        return idx.every(i => typeof s[i]==='number' && s[i]>0);
-      });
+      const allDone = arr.every(p=>{ const s = (p.strokes||[]); return idx.every(i => typeof s[i]==='number' && s[i]>0); });
       if(!allDone) return;
-      // Bepaal winnaar op net score (totaal - parSum - handicap)
       const parSum = idx.reduce((s,i)=>s+(par[i]||0),0);
-      const scored = arr.map(p=>{
-        const gross = idx.reduce((s,i)=>s+(int((p.strokes||[])[i],0)||0),0);
-        const net = (gross - parSum) - (p.handicap||0) * (idx.length/18);
-        return {name:p.name||'Speler', gross, net};
-      });
+      const scored = arr.map(p=>{ const gross = idx.reduce((s,i)=>s+(int((p.strokes||[])[i],0)||0),0); const net = (gross - parSum) - (p.handicap||0) * (idx.length/18); return {name:p.name||'Speler', gross, net}; });
       scored.sort((a,b)=>a.net-b.net);
       const winner = scored[0];
       addEvent({type:'game_end', winner, parSum, holes: idx.length});
     }
 
-    async function addEvent(payload){
-      try{ await addDoc(collection(db,'games',currentGameId,'events'), { ...payload, at: serverTimestamp() }); }catch(e){}
-    }
+    async function addEvent(payload){ try{ await addDoc(collection(db,'games',currentGameId,'events'), { ...payload, at: serverTimestamp() }); }catch(e){} }
 
     function handleEvent(ev){
       if(ev.type==='birdie'||ev.type==='eagle'){
@@ -536,56 +546,28 @@
       }
     }
 
-    // eenvoudige audio (fanfare/applaus) zonder assets
+    // Audio (fanfare + applaus) zonder externe assets
     let audioCtx=null; function ac(){ return audioCtx||(audioCtx=new (window.AudioContext||window.webkitAudioContext)()); }
     function playFanfare(big=false){
       const ctx = ac();
-      // Trompetdeuntje (korte toonreeks)
       const seq = big? [440,523,659,784,880] : [523,659,784];
       let t = ctx.currentTime;
-      seq.forEach((f,i)=>{
-        const o = ctx.createOscillator(); const g = ctx.createGain();
-        o.type='square'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination);
-        const dur=0.18; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.2,t+0.02); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-        o.start(t); o.stop(t+dur); t+=dur*0.9;
-      });
-      // Applaus (ruisburst)
-      const noise = ctx.createBufferSource();
-      const buffer = ctx.createBuffer(1, ctx.sampleRate*0.6, ctx.sampleRate);
-      const data = buffer.getChannelData(0); for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*0.3;
-      noise.buffer=buffer; const gn = ctx.createGain(); gn.gain.value= big?0.25:0.15; noise.connect(gn); gn.connect(ctx.destination); noise.start(t);
+      seq.forEach((f)=>{ const o = ctx.createOscillator(); const g = ctx.createGain(); o.type='square'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination); const dur=0.18; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.2,t+0.02); g.gain.exponentialRampToValueAtTime(0.001,t+dur); o.start(t); o.stop(t+dur); t+=dur*0.9; });
+      const noise = ctx.createBufferSource(); const buffer = ctx.createBuffer(1, ctx.sampleRate*0.6, ctx.sampleRate); const data = buffer.getChannelData(0); for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*0.3; noise.buffer=buffer; const gn = ctx.createGain(); gn.gain.value= big?0.25:0.15; noise.connect(gn); gn.connect(ctx.destination); noise.start(t);
     }
 
-    async function copyInvite(){
-      const url = new URL(location.href);
-      url.searchParams.set('game', currentGameId);
-      await navigator.clipboard.writeText(url.toString());
-      alert('Invite link gekopieerd naar klembord');
-    }
+    async function copyInvite(){ const url = new URL(location.href); url.searchParams.set('game', currentGameId); await navigator.clipboard.writeText(url.toString()); alert('Invite link gekopieerd naar klembord'); }
 
-    async function exportJson(){
-      const gameRef = doc(db,'games',currentGameId);
-      const gameSnap = await getDoc(gameRef);
-      const playersArr = await fetchPlayersOnce();
-      const data = { gameId: currentGameId, ...(gameSnap.exists()?gameSnap.data():{}), players: playersArr };
-      const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-      const a = el('a'); a.href = URL.createObjectURL(blob); a.download = `golf_${currentGameId}.json`; a.click();
-    }
+    async function exportJson(){ const gameRef = doc(db,'games',currentGameId); const gameSnap = await getDoc(gameRef); const playersArr = await fetchPlayersOnce(); const data = { gameId: currentGameId, ...(gameSnap.exists()?gameSnap.data():{}), players: playersArr }; const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a = el('a'); a.href = URL.createObjectURL(blob); a.download = `golf_${currentGameId}.json`; a.click(); }
 
-    function fetchPlayersOnce(){
-      return new Promise((resolve,reject)=>{
-        const q = query(collection(db,'games',currentGameId,'players'));
-        const stop = onSnapshot(q, (qs)=>{ const arr=[]; qs.forEach(d=>arr.push({id:d.id, ...d.data()})); stop(); resolve(arr); }, reject);
-      });
-    }
+    function fetchPlayersOnce(){ return new Promise((resolve,reject)=>{ const q = query(collection(db,'games',currentGameId,'players')); const stop = onSnapshot(q, (qs)=>{ const arr=[]; qs.forEach(d=>arr.push({id:d.id, ...d.data()})); stop(); resolve(arr); }, reject); }); }
 
     // helpers
     function int(v,def){ const n = parseInt(v,10); return isNaN(n)?def:n }
     function clamp(n,min,max){ if(n==null)return n; return Math.max(min, Math.min(max,n)) }
-    function sum(a){ return a.reduce((x,y)=>x+(y||0),0) }
     function signed(n){ return (n>0?'+':'')+n }
     function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms) } }
-    function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])) }
+    function escapeHtml(s){ return (s||'').replace(/[&<>\"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])) }
 
     // Auto-join via URL ?game=CODE
     (function(){ const sp = new URLSearchParams(location.search); const g = sp.get('game'); if(g){ gameCodeInp.value = g; } })();
