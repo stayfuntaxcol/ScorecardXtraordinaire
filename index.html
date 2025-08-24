@@ -5,40 +5,66 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Multiplayer Golf Scorecard – Regular (Firestore Realtime)</title>
   <style>
-    :root{--c:#0b6bfd;--bg:#0f172a;--card:#111827;--muted:#94a3b8;--ok:#16a34a;--warn:#f59e0b;--err:#ef4444}
-    html,body{margin:0;height:100%;background:#0b1020;color:#e5e7eb;font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-    .wrap{max-width:1100px;margin:0 auto;padding:16px}
-    .card{background:#0f1426;border:1px solid #1f2937;border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    :root{--c:#0b6bfd;--bg:#0b1020;--card:#0f1426;--muted:#94a3b8;--ok:#16a34a;--warn:#f59e0b;--err:#ef4444;--purple:#7c3aed}
+    html,body{margin:0;height:100%;background:var(--bg);color:#e5e7eb;font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    .wrap{max-width:1200px;margin:0 auto;padding:16px}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
     h1{font-size:20px;margin:0 0 6px}
     h2{font-size:16px;margin:0 0 6px;color:#cbd5e1}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .row>input,.row>button,.row>select{padding:8px 10px;border-radius:10px;border:1px solid #334155;background:#0b1020;color:#e5e7eb}
+    .row>input,.row>button,.row>select,.row>textarea{padding:8px 10px;border-radius:10px;border:1px solid #334155;background:#0b1020;color:#e5e7eb}
     .row>button{background:var(--c);border-color:transparent;cursor:pointer}
     .row>button.ghost{background:#0b1020;border:1px dashed #334155}
     .help{color:var(--muted);font-size:12px}
     .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b1020;border:1px solid #334155;color:#cbd5e1}
-    table{width:100%;border-collapse:separate;border-spacing:0;margin-top:8px}
-    th,td{border:1px solid #1f2937;padding:6px 8px;text-align:center}
-    th{background:#121a33;color:#cbd5e1;position:sticky;top:0}
-    td{background:#0c1226}
-    tr:nth-child(even) td{background:#0a1020}
-    td.me input{background:#101a36;border:1px solid #334155}
-    input[type="number"]{width:54px;text-align:center}
-    input[type="text"]{min-width:200px}
-    .leader{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center}
-    .tag{font-size:11px;color:#93c5fd}
+    .muted{color:#94a3b8}
+    .hidden{display:none}
+    .right{margin-left:auto}
     .status{display:inline-flex;gap:6px;align-items:center}
     .dot{width:8px;height:8px;border-radius:50%}
     .dot.live{background:#22c55e;box-shadow:0 0 0 6px rgba(34,197,94,.15)}
     .dot.off{background:#64748b}
-    .notice{background:#05243a;border:1px solid #11364e;color:#cfe8ff;padding:10px;border-radius:10px}
-    .grid{display:grid;grid-template-columns:repeat(18,1fr)}
-    .muted{color:#94a3b8}
-    .hidden{display:none}
-    .right{margin-left:auto}
+
+    /* Verticale scorekaart */
+    .vtable{display:grid;gap:6px;overflow:auto}
+    .vcol{display:flex;flex-direction:column;gap:6px;min-width:90px}
+    .vhead{font-weight:600;text-align:center}
+    .cell{background:#0c1226;border:1px solid #1f2937;border-radius:10px;padding:6px;text-align:center}
+    .cell input{width:100%;text-align:center;border:1px solid #334155;background:#0b1020;color:#e5e7eb;border-radius:8px;padding:6px}
+    .parcol .cell{background:#0a1020}
+    .hcpcell input{width:64px}
+
+    .badge{border-radius:8px;padding:2px 6px;font-size:12px;display:inline-block}
+    .birdie{background:#05243a;border:1px solid #1b4d6b;color:#9bd3ff}
+    .eagle{background:#052a1b;border:1px solid #1f6b3a;color:#9bffbc}
+    .par{background:#1f2937;color:#cbd5e1}
+    .bogey{background:var(--purple);color:white}
+
+    .switch{display:inline-flex;gap:8px;align-items:center}
+
+    /* Confetti */
+    .confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+    .piece{position:absolute;will-change:transform;animation:fall 2s linear forwards}
+    @keyframes fall{to{transform:translate(var(--dx), 100vh) rotate(720deg);opacity:0}}
+
+    /* Overlay voor file:// */
+    .overlay{position:fixed;inset:0;background:#0b1020;z-index:9999;display:none;padding:18px}
+    .overlay .box{max-width:900px;margin:0 auto;background:#0f1426;border:1px solid #1f2937;border-radius:14px;padding:16px}
+    .overlay h2{margin:0 0 8px}
+    .httpok .overlay{display:none}
   </style>
+  <script>if(location.protocol==='http:'||location.protocol==='https:'){document.documentElement.classList.add('httpok');}else{document.addEventListener('DOMContentLoaded',()=>{document.getElementById('fileOverlay').style.display='block';});}</script>
 </head>
 <body>
+  <div class="overlay" id="fileOverlay">
+    <div class="box">
+      <h2>Open via localhost / GitHub Pages (niet file://)</h2>
+      <p class="help">Start lokaal: <code>python -m http.server 8000</code> → ga naar <code>http://localhost:8000/</code>. Of host via GitHub Pages.</p>
+    </div>
+  </div>
+
+  <div class="confetti" id="confetti"></div>
+
   <div class="wrap">
     <div class="card" id="authCard">
       <h1>Multiplayer Golf Scorecard</h1>
@@ -59,6 +85,12 @@
             <option value="extended" disabled>Extended (binnenkort)</option>
           </select>
         </label>
+        <label>Aantal holes:
+          <select id="holesSelect">
+            <option value="9">9 holes (1–9)</option>
+            <option value="18" selected>18 holes</option>
+          </select>
+        </label>
         <button id="btnCreate">Maak nieuwe game</button>
       </div>
       <h2>Of meespelen</h2>
@@ -72,7 +104,7 @@
 
     <div class="card hidden" id="gameCard">
       <div class="row">
-        <h2 class="right">Game: <span id="codeOut" class="pill"></span> <span id="modeOut" class="pill"></span></h2>
+        <h2 class="right">Game: <span id="codeOut" class="pill"></span> <span id="modeOut" class="pill"></span> <span id="holesOut" class="pill"></span></h2>
       </div>
 
       <div class="row">
@@ -80,34 +112,26 @@
         <label>Datum: <input id="gameDate" type="date" /></label>
         <span class="status"><span class="dot off" id="liveDot"></span> <span id="liveTxt">Offline</span></span>
         <span class="pill" id="rolePill">rol: speler</span>
+        <label class="switch"><input type="checkbox" id="toggleBack" checked> Toon holes 10–18</label>
       </div>
 
       <div class="row">
         <button id="btnAddMe">Voeg mij toe als speler</button>
+        <div id="hostAdd" class="row" style="gap:6px;display:none">
+          <input id="manualName" type="text" placeholder="Spelernaam" />
+          <input id="manualHcp" type="number" min="0" max="54" value="0" />
+          <button id="btnAddManual" class="ghost">Host: speler handmatig toevoegen</button>
+        </div>
         <button id="btnCopyLink" class="ghost">Kopieer invite link</button>
       </div>
 
-      <div class="notice" id="hostNotice" style="display:none;">
-        <b>Host</b>: jij beheert course, par en of iedereen overal mag editen.
-        <div class="row" style="margin-top:8px">
-          <label>Open invoer: <input type="checkbox" id="openInputToggle" /></label>
-        </div>
-      </div>
-
       <div class="card">
-        <h2>Par per hole</h2>
-        <div class="help">Host kan par aanpassen. Werkt direct door in leaderboard (+/- par en net score).</div>
-        <div id="parGrid" class="grid"></div>
-      </div>
-
-      <div class="card">
-        <h2>Scorekaart (Regular)</h2>
-        <div class="help">Elke speler heeft een eigen handicap. Net score = (totaal − som(par)) − handicap.</div>
-        <div style="overflow:auto">
-          <table id="scoreTable">
-            <thead id="thead"></thead>
-            <tbody id="tbody"></tbody>
-          </table>
+        <h2>Verticale scorekaart</h2>
+        <div class="help">Par kolom links. Spelers naast elkaar. Front 9 en Back 9; Back 9 is te verbergen.</div>
+        <div id="vtableFront" class="vtable" style="grid-template-columns: repeat(1, minmax(90px,1fr));"></div>
+        <div id="vtableBackWrap" class="hidden">
+          <div style="height:8px"></div>
+          <div id="vtableBack" class="vtable" style="grid-template-columns: repeat(1, minmax(90px,1fr));"></div>
         </div>
       </div>
 
@@ -126,29 +150,28 @@
   </div>
 
   <script type="module">
-    // === Firebase SDK ===
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getAuth, onAuthStateChanged, signInAnonymously, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { getFirestore, collection, doc, getDoc, setDoc, addDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-    // ===  VERVANG MET JOUW CONFIG  ===
+    // === Jouw Firebase config ===
     const firebaseConfig = {
-  apiKey: "AIzaSyAYzZ02RvPTDHLUu9Eh6sJXJ-gZNrrHiVY",
-  authDomain: "multiplayer-golf-scorecard.firebaseapp.com",
-  projectId: "multiplayer-golf-scorecard",
-  storageBucket: "multiplayer-golf-scorecard.appspot.com",
-  messagingSenderId: "824350863208",
-  appId: "1:824350863208:web:c0455cafc028ec9bfa70dd",
-  measurementId: "G-MT45DZXMR2"
-};
+      apiKey: "AIzaSyAYzZ02RvPTDHLUu9Eh6sJXJ-gZNrrHiVY",
+      authDomain: "multiplayer-golf-scorecard.firebaseapp.com",
+      projectId: "multiplayer-golf-scorecard",
+      storageBucket: "multiplayer-golf-scorecard.appspot.com",
+      messagingSenderId: "824350863208",
+      appId: "1:824350863208:web:c0455cafc028ec9bfa70dd",
+      measurementId: "G-MT45DZXMR2"
+    };
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db   = getFirestore(app);
 
-    // DOM utils
+    // DOM helpers
     const $ = (q)=>document.querySelector(q);
-    const el = (tag, attrs={})=>{ const e=document.createElement(tag); Object.assign(e, attrs); return e };
+    const el = (t, a={})=>{ const e=document.createElement(t); Object.assign(e,a); return e };
 
     // Elements
     const authCard = $('#authCard');
@@ -164,33 +187,44 @@
     const btnJoin     = $('#btnJoin');
     const mePill      = $('#mePill');
     const modeSelect  = $('#modeSelect');
+    const holesSelect = $('#holesSelect');
 
     const courseName  = $('#courseName');
     const gameDate    = $('#gameDate');
     const liveDot     = $('#liveDot');
     const liveTxt     = $('#liveTxt');
     const rolePill    = $('#rolePill');
-    const hostNotice  = $('#hostNotice');
-    const openInputToggle = $('#openInputToggle');
-    const parGrid     = $('#parGrid');
-    const thead       = $('#thead');
-    const tbody       = $('#tbody');
+    const toggleBack  = $('#toggleBack');
+
+    const vtableFront = $('#vtableFront');
+    const vtableBack  = $('#vtableBack');
+    const vtableBackWrap = $('#vtableBackWrap');
+
     const leader      = $('#leader');
     const btnAddMe    = $('#btnAddMe');
+    const btnAddManual= $('#btnAddManual');
+    const manualName  = $('#manualName');
+    const manualHcp   = $('#manualHcp');
     const btnCopyLink = $('#btnCopyLink');
     const btnExport   = $('#btnExport');
     const codeOut     = $('#codeOut');
     const modeOut     = $('#modeOut');
+    const holesOut    = $('#holesOut');
+
+    const confettiBox = $('#confetti');
 
     // State
     let currentUser = null;
     let currentGameId = null;
     let unsubPlayers = null;
     let unsubGame = null;
+    let unsubEvents = null;
     let hostUid = null;
     let openInput = false;
     let par = new Array(18).fill(4);
     let mode = 'regular';
+    let holes = 18; // 9 of 18
+    let players = [];
 
     // Restore
     gameCodeInp.value = localStorage.getItem('golf_game') || '';
@@ -229,13 +263,15 @@
       const code = randCode();
       const gameRef = doc(db,'games',code);
       const today = new Date().toISOString().slice(0,10);
-      mode = modeSelect.value; // currently only 'regular' allowed
+      mode = modeSelect.value;
+      holes = parseInt(holesSelect.value,10);
       await setDoc(gameRef,{
         code,
         createdAt: serverTimestamp(),
         hostUid: currentUser.uid,
         openInput: false,
-        mode: 'regular', // Extended komt later
+        mode: 'regular',
+        settings: { holes },
         course: { name: 'Onbekende baan', date: today, par: new Array(18).fill(4) }
       });
       await joinGame(code);
@@ -256,9 +292,12 @@
       startListeners();
     }
 
+    function holeIndices(){ return holes===9 ? [...Array(9).keys()] : [...Array(18).keys()]; }
+
     async function startListeners(){
       if(unsubPlayers) unsubPlayers();
       if(unsubGame) unsubGame();
+      if(unsubEvents) unsubEvents();
 
       const gameRef = doc(db,'games',currentGameId);
 
@@ -269,28 +308,38 @@
         openInput = !!g.openInput;
         par = g.course?.par || new Array(18).fill(4);
         mode = g.mode || 'regular';
+        holes = g.settings?.holes || 18;
         courseName.value = g.course?.name || '';
         gameDate.value = g.course?.date || '';
-        openInputToggle.checked = openInput;
+        toggleBack.checked = true;
+        vtableBackWrap.classList.toggle('hidden', holes===9 || !toggleBack.checked);
+        holesOut.textContent = `${holes} holes`;
         modeOut.textContent = `mode: ${mode}`;
 
         const isHost = currentUser && currentUser.uid===hostUid;
         rolePill.textContent = `rol: ${isHost?'host':'speler'}`;
-        hostNotice.style.display = isHost?'block':'none';
-        renderParGrid(isHost);
+        document.getElementById('hostAdd').style.display = isHost?'flex':'none';
+        renderVertical();
         setLive(true);
       });
 
-      const q = query(collection(db,'games',currentGameId,'players'), orderBy('total'));
-      unsubPlayers = onSnapshot(q, (qs)=>{
-        const arr = [];
-        qs.forEach(d=>arr.push({id:d.id, ...d.data()}));
-        renderTable(arr);
-        renderLeader(arr);
+      const qPlayers = query(collection(db,'games',currentGameId,'players'), orderBy('total'));
+      unsubPlayers = onSnapshot(qPlayers, (qs)=>{
+        players = [];
+        qs.forEach(d=>players.push({id:d.id, ...d.data()}));
+        renderVertical();
+        renderLeader(players);
+        maybeFinalEvent(players);
       });
 
-      openInputToggle.addEventListener('change', async ()=>{
-        await updateDoc(gameRef,{openInput: openInputToggle.checked});
+      unsubEvents = onSnapshot(collection(db,'games',currentGameId,'events'), (qs)=>{
+        qs.docChanges().forEach(ch=>{
+          if(ch.type==='added') handleEvent(ch.doc.data());
+        })
+      })
+
+      toggleBack.addEventListener('change', ()=>{
+        vtableBackWrap.classList.toggle('hidden', holes===9 || !toggleBack.checked);
       });
 
       courseName.addEventListener('change', debounce(async ()=>{
@@ -303,96 +352,107 @@
       }, 0));
 
       btnAddMe.onclick = addMeAsPlayer;
+      btnAddManual.onclick = addManualPlayer;
       btnCopyLink.onclick = copyInvite;
       btnExport.onclick = exportJson;
     }
 
     function isHost(){ return currentUser && currentUser.uid===hostUid }
-
-    function setLive(on){
-      liveDot.classList.toggle('live',on);
-      liveDot.classList.toggle('off',!on);
-      liveTxt.textContent = on?'Live':'Offline';
-    }
+    function setLive(on){ liveDot.classList.toggle('live',on); liveDot.classList.toggle('off',!on); liveTxt.textContent = on?'Live':'Offline'; }
 
     async function addMeAsPlayer(){
       if(!currentUser) return;
       const pRef = doc(db,'games',currentGameId,'players', currentUser.uid);
       const name = (currentUser.displayName||'Speler').trim();
       const init = new Array(18).fill(null);
-      await setDoc(pRef,{
-        uid: currentUser.uid,
-        name,
-        handicap: 0, // nieuw in Regular
-        strokes: init,
-        total: 0,
-        updatedAt: serverTimestamp()
-      }, {merge:true});
+      await setDoc(pRef,{ uid: currentUser.uid, name, handicap: 0, strokes: init, total: 0, updatedAt: serverTimestamp() }, {merge:true});
     }
 
-    function renderParGrid(editable){
-      parGrid.innerHTML = '';
-      for(let i=0;i<18;i++){
-        const inp = el('input',{type:'number', min:2, max:7, value: par[i]||4});
-        inp.disabled = !editable;
-        inp.addEventListener('change', debounce(async ()=>{
-          par[i] = clamp(int(inp.value,4),2,7);
-          await updateDoc(doc(db,'games',currentGameId), { 'course.par': par });
-        }, 200));
-        const cell = el('div');
-        const lbl = el('div',{textContent:`H${i+1}`, className:'muted'});
-        cell.append(lbl); cell.append(inp);
-        parGrid.append(cell);
+    async function addManualPlayer(){
+      if(!isHost()) return alert('Alleen host');
+      const name = (manualName.value||'Speler').trim();
+      const hcp  = clamp(int(manualHcp.value,0),0,54);
+      const id = 'm_'+Math.random().toString(36).slice(2,8);
+      const pRef = doc(db,'games',currentGameId,'players', id);
+      await setDoc(pRef,{ uid: id, name, handicap: hcp, strokes: new Array(18).fill(null), total:0, updatedAt: serverTimestamp() });
+      manualName.value=''; manualHcp.value='0';
+    }
+
+    function renderVertical(){
+      // Build columns: Par first, then each player
+      const cols = [buildParColumn(0,9), ...players.map(p=>buildPlayerColumn(p,0,9))];
+      vtableFront.innerHTML='';
+      vtableFront.style.gridTemplateColumns = `repeat(${cols.length}, minmax(110px,1fr))`;
+      cols.forEach(c=>vtableFront.append(c));
+
+      const showBack = holes===18 && toggleBack.checked;
+      if(showBack){
+        const colsB = [buildParColumn(9,18), ...players.map(p=>buildPlayerColumn(p,9,18))];
+        vtableBack.innerHTML='';
+        vtableBack.style.gridTemplateColumns = `repeat(${colsB.length}, minmax(110px,1fr))`;
+        colsB.forEach(c=>vtableBack.append(c));
+        vtableBackWrap.classList.remove('hidden');
+      } else {
+        vtableBackWrap.classList.add('hidden');
       }
     }
 
-    function renderTable(players){
-      // header
-      thead.innerHTML = '';
-      const hr = el('tr');
-      hr.append(th('Speler'));
-      hr.append(th('HCP'));
-      for(let i=1;i<=18;i++) hr.append(th('H'+i));
-      hr.append(th('Totaal'));
-      hr.append(th('+/- Par'));
-      hr.append(th('Net (+/-)'));
-      thead.append(hr);
+    function buildParColumn(start,end){
+      const col = el('div',{className:'vcol parcol'});
+      col.append(el('div',{className:'cell vhead', innerHTML:`Par<br><span class='muted'>Holes ${start+1}-${end}</span>`}));
+      for(let i=start;i<end;i++){
+        const inp = el('input',{type:'number', min:2, max:7, value: par[i]||4});
+        inp.onchange = debounce(async ()=>{ par[i]=clamp(int(inp.value,4),2,7); await updateDoc(doc(db,'games',currentGameId), { 'course.par': par }); }, 200);
+        const cell = el('div',{className:'cell'}); cell.append(inp); col.append(cell);
+      }
+      // Totals row for par
+      const idx = [...Array(end-start).keys()].map(k=>start+k);
+      const parSum = idx.reduce((s,i)=>s+(par[i]||0),0);
+      col.append(el('div',{className:'cell vhead', innerHTML:`Par totaal<br><b>${parSum}</b>`}));
+      return col;
+    }
 
-      // body
-      tbody.innerHTML='';
-      const myUid = currentUser?.uid;
-      players.forEach(p=>{
-        const tr = el('tr');
-        const nameTd = el('td'); nameTd.textContent = p.name||'Speler'; tr.append(nameTd);
+    function buildPlayerColumn(p,start,end){
+      const editable = (openInput || p.uid===auth.currentUser?.uid || isHost());
+      const col = el('div',{className:'vcol'});
+      col.append(el('div',{className:'cell vhead', innerHTML:`${escapeHtml(p.name)}<br><span class='muted'>UID ${(p.uid||'').slice(0,4)}</span>`}));
+      // HCP row
+      const hcpCell = el('div',{className:'cell hcpcell'});
+      const hcpInp = el('input',{type:'number', min:0, max:54, value: p.handicap ?? 0});
+      hcpInp.disabled=!editable; hcpInp.onchange = debounce(()=> saveHandicap(p.uid, hcpInp.value), 200);
+      hcpCell.append(el('div',{className:'muted', innerText:'HCP'})); hcpCell.append(hcpInp); col.append(hcpCell);
 
-        // Handicap kolom (bewerkbaar door speler zelf, host, of bij openInput)
-        const editable = (openInput || p.uid===myUid || isHost());
-        const hcpTd = el('td');
-        const hcpInp = el('input',{type:'number', min:0, max:54, value: p.handicap ?? 0});
-        hcpInp.disabled = !editable;
-        hcpInp.addEventListener('change', debounce(()=> saveHandicap(p.uid, hcpInp.value), 250));
-        hcpTd.append(hcpInp);
-        tr.append(hcpTd);
+      const strokes = (p.strokes||new Array(18).fill(null)).slice(0,18);
+      for(let i=start;i<end;i++){
+        const cell = el('div',{className:'cell'});
+        const inp = el('input',{type:'number', min:1, max:8, value: strokes[i] ?? ''});
+        inp.disabled = !editable;
+        inp.onchange = debounce(()=> saveStroke(p.uid, i, inp.value), 150);
+        if(strokes[i]!=null){ colorCodeCell(cell, strokes[i], par[i]); }
+        cell.append(inp);
+        col.append(cell);
+      }
 
-        const strokes = (p.strokes||new Array(18).fill(null)).slice(0,18);
-        let total = 0;
-        for(let i=0;i<18;i++){
-          const td = el('td');
-          if(editable){ td.classList.add('me'); }
-          const inp = el('input',{type:'number', min:1, max:15, value: strokes[i] ?? ''});
-          inp.disabled = !editable;
-          inp.addEventListener('change', debounce(()=> saveStroke(p.uid, i, inp.value), 250));
-          td.append(inp);
-          tr.append(td);
-          total += (int(strokes[i],0));
-        }
-        const grossDelta = total - sum(par);
-        const netDelta   = grossDelta - (p.handicap||0);
-        const totalTd = el('td'); totalTd.textContent = total; tr.append(totalTd);
-        const toParTd = el('td'); toParTd.textContent = signed(grossDelta); tr.append(toParTd);
-        const netTd   = el('td'); netTd.textContent   = signed(netDelta); tr.append(netTd);
-        tbody.append(tr);
-      });
+      // Totals for this segment
+      const idx = [...Array(end-start).keys()].map(k=>start+k);
+      const gross = idx.reduce((s,i)=>s+(int(strokes[i],0)||0),0);
+      const parSum = idx.reduce((s,i)=>s+(par[i]||0),0);
+      const netDelta = (gross - parSum) - (p.handicap||0) * ( (end-start)/18 );
+      const totalCell = el('div',{className:'cell vhead'});
+      totalCell.innerHTML = `Totaal<br><b>${gross}</b> • <span class='muted'>±Par ${signed(gross-parSum)}</span>`;
+      col.append(totalCell);
+      return col;
+    }
+
+    function colorCodeCell(cell, strokes, p){
+      const diff = strokes - p;
+      let cls='par', label='Par';
+      if(diff<=-2){ cls='eagle'; label='Eagle'; }
+      else if(diff===-1){ cls='birdie'; label='Birdie'; }
+      else if(diff>=1){ cls='bogey'; label='Bogey+'; }
+      const b = el('span',{className:`badge ${cls}`, innerText:label});
+      cell.append(el('div',{style:'margin-top:6px'}));
+      cell.append(b);
     }
 
     async function saveHandicap(playerUid, value){
@@ -402,7 +462,7 @@
     }
 
     async function saveStroke(playerUid, holeIndex, value){
-      const v = clamp(int(value,null), 1, 15);
+      let v = clamp(int(value,null), 1, 8); // max 8
       const pRef = doc(db,'games',currentGameId,'players', playerUid);
       const snap = await getDoc(pRef);
       const data = snap.exists()? snap.data(): {strokes:new Array(18).fill(null)};
@@ -410,25 +470,90 @@
       strokes[holeIndex] = v;
       const total = strokes.reduce((a,b)=>a+(b||0),0);
       await setDoc(pRef, { strokes, total, updatedAt: serverTimestamp() }, {merge:true});
+
+      // Awards & events
+      const pf = players.find(x=>x.uid===playerUid) || data;
+      const pPar = par[holeIndex]||4;
+      if(v<=pPar-1){ // birdie/eagle
+        const type = (v<=pPar-2)?'eagle':'birdie';
+        await addEvent({type, hole: holeIndex+1, player: pf.name||'Speler'});
+      }
+      maybeFinalEvent([...players.filter(x=>x.uid!==playerUid), { ...pf, strokes }]);
     }
 
-    function renderLeader(players){
-      leader.innerHTML='';
-      const ul = el('div');
-      const parSum = sum(par);
-      // Sorteer op Net (+/-)
-      const sorted = players.slice().sort((a,b)=>((a.total||0)-parSum-(a.handicap||0)) - ((b.total||0)-parSum-(b.handicap||0)));
-      sorted.forEach((p,idx)=>{
-        const gross = (p.total||0) - parSum;
-        const net   = gross - (p.handicap||0);
-        const row = el('div',{className:'leader'});
-        row.append(el('div',{textContent:`${idx+1}. ${p.name}`}));
-        row.append(el('div',{textContent:`Totaal: ${p.total||0}`}));
-        row.append(el('div',{innerHTML:`<span class="tag">Gross: ${signed(gross)}</span>`}));
-        row.append(el('div',{innerHTML:`<span class="tag">Net: ${signed(net)}</span>`}));
-        ul.append(row);
+    function maybeFinalEvent(arr){
+      const idx = holeIndices();
+      if(arr.length===0) return;
+      // Alle spelers hebben voor alle geselecteerde holes een score?
+      const allDone = arr.every(p=>{
+        const s = (p.strokes||[]);
+        return idx.every(i => typeof s[i]==='number' && s[i]>0);
       });
-      leader.append(ul);
+      if(!allDone) return;
+      // Bepaal winnaar op net score (totaal - parSum - handicap)
+      const parSum = idx.reduce((s,i)=>s+(par[i]||0),0);
+      const scored = arr.map(p=>{
+        const gross = idx.reduce((s,i)=>s+(int((p.strokes||[])[i],0)||0),0);
+        const net = (gross - parSum) - (p.handicap||0) * (idx.length/18);
+        return {name:p.name||'Speler', gross, net};
+      });
+      scored.sort((a,b)=>a.net-b.net);
+      const winner = scored[0];
+      addEvent({type:'game_end', winner, parSum, holes: idx.length});
+    }
+
+    async function addEvent(payload){
+      try{ await addDoc(collection(db,'games',currentGameId,'events'), { ...payload, at: serverTimestamp() }); }catch(e){}
+    }
+
+    function handleEvent(ev){
+      if(ev.type==='birdie'||ev.type==='eagle'){
+        celebrate(`${ev.player} — ${ev.type.toUpperCase()} op hole ${ev.hole}!`);
+      } else if(ev.type==='game_end'){
+        celebrate(`WINNAAR: ${ev.winner.name}  (Net: ${ev.winner.net.toFixed(1)})`, true);
+      }
+    }
+
+    function celebrate(text, big=false){
+      launchConfetti(big?200:120);
+      playFanfare(big);
+      const banner = el('div',{style:`position:fixed;inset:auto 0 10%;margin:auto;max-width:90%;text-align:center;font-weight:800;font-size:${big? '42px':'28px'};color:white;text-shadow:0 2px 10px #000`});
+      banner.innerText = text;
+      document.body.append(banner);
+      setTimeout(()=>banner.remove(), 3500);
+    }
+
+    function launchConfetti(n=120){
+      for(let i=0;i<n;i++){
+        const d = el('div',{className:'piece'});
+        d.style.left = Math.random()*100+'%';
+        d.style.top = '-10px';
+        d.style.setProperty('--dx', ((Math.random()*200-100))+'px');
+        d.style.background = `hsl(${Math.random()*360}, 90%, 60%)`;
+        d.style.width = d.style.height = (6+Math.random()*6)+'px';
+        confettiBox.append(d);
+        setTimeout(()=>d.remove(), 2200);
+      }
+    }
+
+    // eenvoudige audio (fanfare/applaus) zonder assets
+    let audioCtx=null; function ac(){ return audioCtx||(audioCtx=new (window.AudioContext||window.webkitAudioContext)()); }
+    function playFanfare(big=false){
+      const ctx = ac();
+      // Trompetdeuntje (korte toonreeks)
+      const seq = big? [440,523,659,784,880] : [523,659,784];
+      let t = ctx.currentTime;
+      seq.forEach((f,i)=>{
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type='square'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination);
+        const dur=0.18; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.2,t+0.02); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+        o.start(t); o.stop(t+dur); t+=dur*0.9;
+      });
+      // Applaus (ruisburst)
+      const noise = ctx.createBufferSource();
+      const buffer = ctx.createBuffer(1, ctx.sampleRate*0.6, ctx.sampleRate);
+      const data = buffer.getChannelData(0); for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*0.3;
+      noise.buffer=buffer; const gn = ctx.createGain(); gn.gain.value= big?0.25:0.15; noise.connect(gn); gn.connect(ctx.destination); noise.start(t);
     }
 
     async function copyInvite(){
@@ -444,36 +569,26 @@
       const playersArr = await fetchPlayersOnce();
       const data = { gameId: currentGameId, ...(gameSnap.exists()?gameSnap.data():{}), players: playersArr };
       const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-      const a = el('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `golf_${currentGameId}.json`;
-      a.click();
+      const a = el('a'); a.href = URL.createObjectURL(blob); a.download = `golf_${currentGameId}.json`; a.click();
     }
 
     function fetchPlayersOnce(){
       return new Promise((resolve,reject)=>{
         const q = query(collection(db,'games',currentGameId,'players'));
-        const stop = onSnapshot(q, (qs)=>{
-          const arr=[]; qs.forEach(d=>arr.push({id:d.id, ...d.data()}));
-          stop(); resolve(arr);
-        }, reject);
+        const stop = onSnapshot(q, (qs)=>{ const arr=[]; qs.forEach(d=>arr.push({id:d.id, ...d.data()})); stop(); resolve(arr); }, reject);
       });
     }
 
     // helpers
-    function th(txt){ const t=el('th'); t.textContent=txt; return t }
     function int(v,def){ const n = parseInt(v,10); return isNaN(n)?def:n }
     function clamp(n,min,max){ if(n==null)return n; return Math.max(min, Math.min(max,n)) }
     function sum(a){ return a.reduce((x,y)=>x+(y||0),0) }
     function signed(n){ return (n>0?'+':'')+n }
     function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms) } }
+    function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])) }
 
     // Auto-join via URL ?game=CODE
-    (function(){
-      const sp = new URLSearchParams(location.search);
-      const g = sp.get('game');
-      if(g){ gameCodeInp.value = g; }
-    })();
+    (function(){ const sp = new URLSearchParams(location.search); const g = sp.get('game'); if(g){ gameCodeInp.value = g; } })();
   </script>
 </body>
 </html>
